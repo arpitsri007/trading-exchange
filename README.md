@@ -6,11 +6,7 @@ A high-performance, in-memory trading exchange system that supports order matchi
 
 The system follows a layered architecture with clear separation of concerns. For detailed architecture diagrams, please refer to:
 
-- [Component Diagram](docs/component-diagram.puml) - Shows the high-level architecture and component relationships
-- [Sequence Diagrams](docs/sequence-diagrams.puml) - Shows the flow of operations for:
-  - Placing orders
-  - Modifying orders
-  - Cancelling orders
+- [UML Diagram](docs/architecture.puml) - Shows the high-level architecture and component relationships
 
 ### Components
 

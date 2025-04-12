@@ -1,0 +1,119 @@
+@startuml Trading Exchange Architecture
+
+' Set styling
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam backgroundColor White
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+' Component Diagram
+package "Trading Exchange" {
+    database "Order Repository" as OrderRepository {
+        [Order]
+    }
+    
+    database "Trade Repository" as TradeRepository {
+        [Trade]
+    }
+    
+    database "User Repository" as UserRepository {
+        [User]
+    }
+    
+    cloud "Trading Service" as TradingService {
+        [TradingService]
+    }
+    
+    cloud "Matching Engine" as MatchingEngine {
+        [MatchingEngine]
+        [OrderBook]
+        [IOrderBook]
+    }
+}
+
+' Define relationships
+TradingService --> MatchingEngine : uses
+TradingService --> OrderRepository : uses
+TradingService --> TradeRepository : uses
+TradingService --> UserRepository : uses
+
+MatchingEngine --> OrderBook : manages
+MatchingEngine --> OrderRepository : uses
+MatchingEngine --> TradeRepository : uses
+
+OrderBook ..|> IOrderBook : implements
+
+Order --> OrderSide : has
+Order --> OrderStatus : has
+
+' Sequence Diagrams
+@startuml Order Flow Sequence
+
+skinparam sequence {
+    ArrowColor Black
+    ActorBorderColor Black
+    LifeLineBorderColor Black
+    ParticipantBorderColor Black
+    ParticipantBackgroundColor White
+}
+
+actor User
+participant "TradingService" as TradingService
+participant "MatchingEngine" as MatchingEngine
+participant "OrderRepository" as OrderRepository
+participant "OrderBook" as OrderBook
+participant "TradeRepository" as TradeRepository
+
+== Place Order ==
+User -> TradingService: placeOrder(userId, symbol, side, price, quantity)
+activate TradingService
+TradingService -> TradingService: validateOrderParameters()
+TradingService -> Order: createOrder()
+TradingService -> MatchingEngine: placeOrder(order)
+activate MatchingEngine
+MatchingEngine -> OrderRepository: save(order)
+MatchingEngine -> OrderBook: addOrder(order)
+MatchingEngine -> MatchingEngine: matchOrders()
+alt has matching orders
+    MatchingEngine -> Trade: createTrade()
+    MatchingEngine -> TradeRepository: addTrade(trade)
+    MatchingEngine -> Order: updateQuantity()
+    MatchingEngine -> OrderRepository: updateOrder(order)
+end
+deactivate MatchingEngine
+deactivate TradingService
+
+== Modify Order ==
+User -> TradingService: modifyOrder(orderId, newPrice, newQuantity)
+activate TradingService
+TradingService -> TradingService: validateModifyOrderParameters()
+TradingService -> MatchingEngine: modifyOrder(orderId, newPrice, newQuantity)
+activate MatchingEngine
+MatchingEngine -> OrderRepository: findById(orderId)
+MatchingEngine -> OrderBook: removeOrder(order)
+MatchingEngine -> Order: updatePrice() or updateQuantity()
+MatchingEngine -> OrderBook: addOrder(order)
+MatchingEngine -> MatchingEngine: matchOrders()
+alt has matching orders
+    MatchingEngine -> Trade: createTrade()
+    MatchingEngine -> TradeRepository: addTrade(trade)
+    MatchingEngine -> Order: updateQuantity()
+    MatchingEngine -> OrderRepository: updateOrder(order)
+end
+deactivate MatchingEngine
+deactivate TradingService
+
+== Cancel Order ==
+User -> TradingService: cancelOrder(orderId)
+activate TradingService
+TradingService -> MatchingEngine: cancelOrder(orderId)
+activate MatchingEngine
+MatchingEngine -> OrderRepository: findById(orderId)
+MatchingEngine -> Order: cancel()
+MatchingEngine -> OrderRepository: updateOrder(order)
+MatchingEngine -> OrderBook: removeOrder(order)
+deactivate MatchingEngine
+deactivate TradingService
+
+@enduml 
