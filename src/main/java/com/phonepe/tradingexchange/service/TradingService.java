@@ -26,7 +26,8 @@ public class TradingService {
         this.matchingEngine = MatchingEngine.getInstance();
         this.userRepository = UserRepository.getInstance();
         this.orderRepository = OrderRepository.getInstance();
-        this.tradeRepository = TradeRepository.getInstance();
+        this.tradeRepository = TradeRepository.getInstance();       
+        this.matchingEngine.setRepositories(orderRepository, tradeRepository);
     }
     
     public static TradingService getInstance() {
