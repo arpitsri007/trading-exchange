@@ -269,7 +269,6 @@ class MatchingEngineTest {
         matchingEngine.placeOrder(buyOrder);
         matchingEngine.placeOrder(sellOrder);
         
-        // Modify buy order price to match sell order
         matchingEngine.modifyOrder(buyOrder.getOrderId(), BigDecimal.valueOf(110), null);
         
         verify(tradeRepository).addTrade(any(Trade.class));

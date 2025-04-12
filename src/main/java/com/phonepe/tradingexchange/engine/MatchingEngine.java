@@ -153,10 +153,8 @@ public class MatchingEngine {
                 throw new OrderException("Order book not found for symbol: " + symbol);
             }
 
-            // Remove order from order book
             orderBook.removeOrder(order);
 
-            // Update order with new values
             if (newPrice != null) {
                 order.updatePrice(newPrice);
             }
@@ -164,11 +162,9 @@ public class MatchingEngine {
                 order.updateQuantity(newQuantity);
             }
 
-            // Update repository and add back to order book
             orderRepository.updateOrder(order);
             orderBook.addOrder(order);
 
-            // Try to match orders
             matchOrders(orderBook);
         } finally {
             symbolLock.unlock();
