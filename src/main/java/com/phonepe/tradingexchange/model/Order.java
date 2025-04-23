@@ -19,6 +19,7 @@ public class Order {
     private LocalDateTime updatedAt;
     private BigDecimal quantity;
     private OrderStatus status;
+    private LocalDateTime expiryTime;
     
     private static final AtomicLong ORDER_SEQUENCE = new AtomicLong(1);
     
@@ -35,6 +36,7 @@ public class Order {
                 .status(OrderStatus.OPEN)
                 .createdAt(now)
                 .updatedAt(now)
+                .expiryTime(now.plusMinutes(5))
                 .build();
     }
     
@@ -58,5 +60,9 @@ public class Order {
     
     public boolean isActive() {
         return status == OrderStatus.OPEN;
+    }
+    
+    public boolean isExpired() {
+        return LocalDateTime.now().isAfter(expiryTime);
     }
 } 

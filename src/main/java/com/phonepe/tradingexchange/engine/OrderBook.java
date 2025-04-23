@@ -3,6 +3,7 @@ package com.phonepe.tradingexchange.engine;
 import com.phonepe.tradingexchange.exception.OrderException;
 import com.phonepe.tradingexchange.model.Order;
 import com.phonepe.tradingexchange.model.OrderSide;
+import com.phonepe.tradingexchange.util.ValidationUtils;
 
 import java.math.BigDecimal;
 import java.util.PriorityQueue;
@@ -15,9 +16,7 @@ public class OrderBook implements IOrderBook {
     private final ReentrantReadWriteLock lock;
     
     public OrderBook(String symbol) {
-        if (symbol == null || symbol.trim().isEmpty()) {
-            throw new OrderException("Symbol cannot be null or empty");
-        }
+        ValidationUtils.validateSymbol(symbol);
         
         this.symbol = symbol;
         this.lock = new ReentrantReadWriteLock();
@@ -41,13 +40,7 @@ public class OrderBook implements IOrderBook {
     
     @Override
     public void addOrder(Order order) {
-        if (order == null) {
-            throw new OrderException("Order cannot be null");
-        }
-        
-        if (!order.getSymbol().equals(symbol)) {
-            throw new OrderException("Order symbol does not match order book symbol");
-        }
+        ValidationUtils.validateOrderSymbol(order, symbol);
         
         lock.writeLock().lock();
         try {

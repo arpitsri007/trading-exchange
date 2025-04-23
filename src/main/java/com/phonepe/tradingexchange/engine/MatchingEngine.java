@@ -5,6 +5,7 @@ import com.phonepe.tradingexchange.model.Order;
 import com.phonepe.tradingexchange.model.Trade;
 import com.phonepe.tradingexchange.repository.OrderRepository;
 import com.phonepe.tradingexchange.repository.TradeRepository;
+import com.phonepe.tradingexchange.util.ValidationUtils;
 
 import java.math.BigDecimal;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,7 +42,6 @@ public class MatchingEngine {
     }
     
     public void placeOrder(Order order) throws OrderException {
-        validateOrder(order);
         
         IOrderBook orderBook = orderBooks.computeIfAbsent(
             order.getSymbol(), 
@@ -51,18 +51,6 @@ public class MatchingEngine {
         orderRepository.save(order);
         orderBook.addOrder(order);
         matchOrders(orderBook);
-    }
-    
-    private void validateOrder(Order order) throws OrderException {
-        if (order == null) {
-            throw new OrderException("Order cannot be null");
-        }
-        if (order.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new OrderException("Price must be positive");
-        }
-        if (order.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new OrderException("Quantity must be positive");
-        }
     }
     
     private void matchOrders(IOrderBook orderBook) {
@@ -128,13 +116,7 @@ public class MatchingEngine {
     }
 
     public void modifyOrder(String orderId, BigDecimal newPrice, BigDecimal newQuantity) throws OrderException {
-        if (newPrice != null && newPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new OrderException("Price must be positive");
-        }
-        
-        if (newQuantity != null && newQuantity.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new OrderException("Quantity must be positive");
-        }
+        ValidationUtils.validateModifyOrderParameters(orderId, newPrice, newQuantity);
 
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException("Order not found"));

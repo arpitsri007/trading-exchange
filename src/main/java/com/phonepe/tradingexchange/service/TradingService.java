@@ -1,6 +1,7 @@
 package com.phonepe.tradingexchange.service;
 
 import com.phonepe.tradingexchange.engine.MatchingEngine;
+import com.phonepe.tradingexchange.engine.OrderExpiryManager;
 import com.phonepe.tradingexchange.exception.OrderException;
 import com.phonepe.tradingexchange.exception.TradingException;
 import com.phonepe.tradingexchange.model.Order;
@@ -10,6 +11,7 @@ import com.phonepe.tradingexchange.model.User;
 import com.phonepe.tradingexchange.repository.OrderRepository;
 import com.phonepe.tradingexchange.repository.TradeRepository;
 import com.phonepe.tradingexchange.repository.UserRepository;
+import com.phonepe.tradingexchange.util.ValidationUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -28,6 +30,7 @@ public class TradingService {
         this.orderRepository = OrderRepository.getInstance();
         this.tradeRepository = TradeRepository.getInstance();       
         this.matchingEngine.setRepositories(orderRepository, tradeRepository);
+        OrderExpiryManager.getInstance();
     }
     
     public static TradingService getInstance() {
@@ -43,7 +46,7 @@ public class TradingService {
 
     public User registerUser(String name, String email) throws TradingException {
         try {
-            validateUserDetails(name, email);
+            ValidationUtils.validateUserDetails(name, email);
             User user = User.createUser(name, email);
             userRepository.addUser(user);
             return user;
@@ -52,18 +55,10 @@ public class TradingService {
         }
     }
     
-    private void validateUserDetails(String name, String email) throws TradingException {
-        if (name == null || name.trim().isEmpty()) {
-            throw new TradingException("Name cannot be null or empty");
-        }
-        if (email == null || email.trim().isEmpty()) {
-            throw new TradingException("Email cannot be null or empty");
-        }
-    }
     public Order placeOrder(String userId, String symbol, OrderSide side, 
                           BigDecimal price, BigDecimal quantity) throws OrderException {
         try {
-            validateOrderParameters(userId, symbol, price, quantity);
+            ValidationUtils.validateOrderParameters(userId, symbol, price, quantity);
             Order order = Order.createOrder(userId, symbol, side, price, quantity);
             matchingEngine.placeOrder(order);
             return order;
@@ -71,22 +66,6 @@ public class TradingService {
             throw e;
         } catch (Exception e) {
             throw new OrderException("Failed to place order: " + e.getMessage(), e);
-        }
-    }
-    
-    private void validateOrderParameters(String userId, String symbol, 
-                                       BigDecimal price, BigDecimal quantity) throws OrderException {
-        if (!userRepository.existsById(userId)) {
-            throw new OrderException("User not found");
-        }
-        if (symbol == null || symbol.trim().isEmpty()) {
-            throw new OrderException("Symbol cannot be null or empty");
-        }
-        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new OrderException("Price must be positive");
-        }
-        if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new OrderException("Quantity must be positive");
         }
     }
     
@@ -140,27 +119,11 @@ public class TradingService {
 
     public void modifyOrder(String orderId, BigDecimal newPrice, BigDecimal newQuantity) throws OrderException {
         try {
-            validateModifyOrderParameters(orderId, newPrice, newQuantity);
             matchingEngine.modifyOrder(orderId, newPrice, newQuantity);
         } catch (OrderException e) {
             throw e;
         } catch (Exception e) {
             throw new OrderException("Failed to modify order: " + e.getMessage(), e);
-        }
-    }
-
-    private void validateModifyOrderParameters(String orderId, BigDecimal newPrice, BigDecimal newQuantity) throws OrderException {
-        if (orderId == null || orderId.trim().isEmpty()) {
-            throw new OrderException("Order ID cannot be null or empty");
-        }
-        if (newPrice != null && newPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new OrderException("Price must be positive");
-        }
-        if (newQuantity != null && newQuantity.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new OrderException("Quantity must be positive");
-        }
-        if (newPrice == null && newQuantity == null) {
-            throw new OrderException("At least one of price or quantity must be provided");
         }
     }
 } 

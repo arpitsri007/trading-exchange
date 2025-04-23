@@ -7,14 +7,22 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.ArrayList;
 
 public class OrderRepository {
     private final ConcurrentHashMap<String, Order> orders = new ConcurrentHashMap<>();
-    private static final OrderRepository INSTANCE = new OrderRepository();
+    private static OrderRepository INSTANCE ;
     
     private OrderRepository() {}
     
     public static OrderRepository getInstance() {
+        if (INSTANCE == null) {
+            synchronized (OrderRepository.class) {
+                if (INSTANCE == null) {
+                    INSTANCE = new OrderRepository();
+                }
+            }
+        }
         return INSTANCE;
     }
 
@@ -34,6 +42,10 @@ public class OrderRepository {
         return orders.values().stream()
                 .filter(order -> order.getUserId().equals(userId))
                 .collect(Collectors.toList());
+    }
+
+    public List<Order> findAll() {
+        return new ArrayList<>(orders.values());
     }
 
     public void updateOrder(Order order) {
