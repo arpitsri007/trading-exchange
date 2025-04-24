@@ -29,6 +29,13 @@ public class TradeRepository {
         return INSTANCE;
     }
     
+    /**
+     * Resets the repository - primarily for testing.
+     */
+    public static void reset() {
+        INSTANCE = null;
+    }
+    
     public void addTrade(Trade trade) {
         trades.put(trade.getTradeId(), trade);
     }

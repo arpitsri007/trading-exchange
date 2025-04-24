@@ -1,5 +1,6 @@
 package com.phonepe.tradingexchange.engine;
 
+import com.phonepe.tradingexchange.concurrent.OrderLockManager;
 import com.phonepe.tradingexchange.exception.OrderException;
 import com.phonepe.tradingexchange.model.Order;
 import com.phonepe.tradingexchange.model.Trade;
@@ -13,9 +14,9 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class MatchingEngine {
     private final ConcurrentHashMap<String, IOrderBook> orderBooks = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, ReentrantLock> symbolLocks = new ConcurrentHashMap<>();
     private OrderRepository orderRepository;
     private TradeRepository tradeRepository;
+    private final OrderLockManager lockManager = OrderLockManager.getInstance();
     
     private static MatchingEngine INSTANCE;
     
@@ -41,8 +42,7 @@ public class MatchingEngine {
         this.tradeRepository = tradeRepository;
     }
     
-    public void placeOrder(Order order) throws OrderException {
-        
+    public void addOrder(Order order) throws OrderException {
         IOrderBook orderBook = orderBooks.computeIfAbsent(
             order.getSymbol(), 
             symbol -> new OrderBook(symbol)
@@ -53,17 +53,38 @@ public class MatchingEngine {
         matchOrders(orderBook);
     }
     
+    public void removeOrder(Order order) {
+        IOrderBook orderBook = orderBooks.get(order.getSymbol());
+        if (orderBook != null) {
+            orderBook.removeOrder(order);
+        }
+    }
+    
     private void matchOrders(IOrderBook orderBook) {
-        String symbol = orderBook.getSymbol();
-        ReentrantLock symbolLock = symbolLocks.computeIfAbsent(symbol, s -> new ReentrantLock());
-        
-        symbolLock.lock();
-        try {
-            while (orderBook.hasMatchingOrders()) {
-                Order buyOrder = orderBook.getNextBuyOrder();
-                Order sellOrder = orderBook.getNextSellOrder();
+        while (orderBook.hasMatchingOrders()) {
+            Order buyOrder = orderBook.getNextBuyOrder();
+            Order sellOrder = orderBook.getNextSellOrder();
+            
+            if (buyOrder == null || sellOrder == null) break;
+            
+            // Get locks for both orders
+            ReentrantLock[] locks = lockManager.acquireOrderLocks(buyOrder.getOrderId(), sellOrder.getOrderId());
+            
+            try {
+                // Recheck if orders are still valid after acquiring locks
+                if (!buyOrder.isActive() || !sellOrder.isActive()) {
+                    continue;
+                }
+
+                // Check if stop-loss or take-profit orders are triggered
+                BigDecimal currentPrice = sellOrder.getPrice();
+                if (buyOrder.isStopLossTriggered(currentPrice) || buyOrder.isTakeProfitTriggered(currentPrice) ||
+                    sellOrder.isStopLossTriggered(currentPrice) || sellOrder.isTakeProfitTriggered(currentPrice)) {
+                    continue;
+                }
                 
-                if (buyOrder == null || sellOrder == null) break;
+                // Check for any stop-loss or take-profit orders that should be triggered
+                ((OrderBook) orderBook).checkStopLossAndTakeProfit(currentPrice);
                 
                 BigDecimal executionPrice = sellOrder.getPrice();
                 BigDecimal executionQuantity = buyOrder.getQuantity().min(sellOrder.getQuantity());
@@ -72,9 +93,9 @@ public class MatchingEngine {
                 tradeRepository.addTrade(trade);
                 
                 processOrderExecution(buyOrder, sellOrder, executionQuantity, orderBook);
+            } finally {
+                lockManager.releaseLocks(locks);
             }
-        } finally {
-            symbolLock.unlock();
         }
     }
     
@@ -102,12 +123,22 @@ public class MatchingEngine {
             throw new OrderException("Cannot cancel inactive order");
         }
         
-        order.cancel();
-        orderRepository.updateOrder(order);
-        
-        IOrderBook orderBook = orderBooks.get(order.getSymbol());
-        if (orderBook != null) {
-            orderBook.removeOrder(order);
+        ReentrantLock lock = lockManager.acquireLock(orderId);
+        try {
+            // Recheck if order is still active after acquiring lock
+            if (!order.isActive()) {
+                throw new OrderException("Cannot cancel inactive order");
+            }
+            
+            order.cancel();
+            orderRepository.updateOrder(order);
+            
+            IOrderBook orderBook = orderBooks.get(order.getSymbol());
+            if (orderBook != null) {
+                orderBook.removeOrder(order);
+            }
+        } finally {
+            lockManager.releaseLocks(lock);
         }
     }
     
@@ -125,14 +156,16 @@ public class MatchingEngine {
             throw new OrderException("Cannot modify inactive order");
         }
 
-        String symbol = order.getSymbol();
-        ReentrantLock symbolLock = symbolLocks.computeIfAbsent(symbol, s -> new ReentrantLock());
-        
-        symbolLock.lock();
+        ReentrantLock lock = lockManager.acquireLock(orderId);
         try {
-            IOrderBook orderBook = orderBooks.get(symbol);
+            // Recheck if order is still active after acquiring lock
+            if (!order.isActive()) {
+                throw new OrderException("Cannot modify inactive order");
+            }
+
+            IOrderBook orderBook = orderBooks.get(order.getSymbol());
             if (orderBook == null) {
-                throw new OrderException("Order book not found for symbol: " + symbol);
+                throw new OrderException("Order book not found for symbol: " + order.getSymbol());
             }
 
             orderBook.removeOrder(order);
@@ -149,7 +182,7 @@ public class MatchingEngine {
 
             matchOrders(orderBook);
         } finally {
-            symbolLock.unlock();
+            lockManager.releaseLocks(lock);
         }
     }
 } 

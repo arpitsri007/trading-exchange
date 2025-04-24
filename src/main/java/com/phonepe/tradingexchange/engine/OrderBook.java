@@ -3,23 +3,23 @@ package com.phonepe.tradingexchange.engine;
 import com.phonepe.tradingexchange.exception.OrderException;
 import com.phonepe.tradingexchange.model.Order;
 import com.phonepe.tradingexchange.model.OrderSide;
+import com.phonepe.tradingexchange.model.OrderType;
 import com.phonepe.tradingexchange.util.ValidationUtils;
 
 import java.math.BigDecimal;
 import java.util.PriorityQueue;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class OrderBook implements IOrderBook {
     private final String symbol;
     private final PriorityQueue<Order> buyOrders;
     private final PriorityQueue<Order> sellOrders;
-    private final ReentrantReadWriteLock lock;
+    private final PriorityQueue<Order> stopLossOrders;
+    private final PriorityQueue<Order> takeProfitOrders;
     
     public OrderBook(String symbol) {
         ValidationUtils.validateSymbol(symbol);
         
         this.symbol = symbol;
-        this.lock = new ReentrantReadWriteLock();
 
         this.buyOrders = new PriorityQueue<>((order1, order2) -> {
             int priceComparison = order2.getPrice().compareTo(order1.getPrice());
@@ -36,21 +36,42 @@ public class OrderBook implements IOrderBook {
             }
             return priceComparison;
         });
+
+        this.stopLossOrders = new PriorityQueue<>((order1, order2) -> {
+            int priceComparison = order1.getStopLossPrice().compareTo(order2.getStopLossPrice());
+            if (priceComparison == 0) {
+                return order1.getCreatedAt().compareTo(order2.getCreatedAt());
+            }
+            return priceComparison;
+        });
+
+        this.takeProfitOrders = new PriorityQueue<>((order1, order2) -> {
+            int priceComparison = order1.getTakeProfitPrice().compareTo(order2.getTakeProfitPrice());
+            if (priceComparison == 0) {
+                return order1.getCreatedAt().compareTo(order2.getCreatedAt());
+            }
+            return priceComparison;
+        });
     }
     
     @Override
     public void addOrder(Order order) {
         ValidationUtils.validateOrderSymbol(order, symbol);
         
-        lock.writeLock().lock();
-        try {
-            if (order.getSide() == OrderSide.BUY) {
-                buyOrders.add(order);
-            } else {
-                sellOrders.add(order);
-            }
-        } finally {
-            lock.writeLock().unlock();
+        switch (order.getOrderType()) {
+            case MARKET:
+                if (order.getSide() == OrderSide.BUY) {
+                    buyOrders.add(order);
+                } else {
+                    sellOrders.add(order);
+                }
+                break;
+            case STOP_LOSS:
+                stopLossOrders.add(order);
+                break;
+            case TAKE_PROFIT:
+                takeProfitOrders.add(order);
+                break;
         }
     }
     
@@ -59,86 +80,95 @@ public class OrderBook implements IOrderBook {
         if (order == null) {
             throw new OrderException("Order cannot be null");
         }
-        lock.writeLock().lock();
-        try {
-            if (order.getSide() == OrderSide.BUY) {
-                buyOrders.remove(order);
-            } else {
-                sellOrders.remove(order);
-            }
-        } finally {
-            lock.writeLock().unlock();
+        
+        switch (order.getOrderType()) {
+            case MARKET:
+                if (order.getSide() == OrderSide.BUY) {
+                    buyOrders.remove(order);
+                } else {
+                    sellOrders.remove(order);
+                }
+                break;
+            case STOP_LOSS:
+                stopLossOrders.remove(order);
+                break;
+            case TAKE_PROFIT:
+                takeProfitOrders.remove(order);
+                break;
         }
     }
     
     @Override
     public BigDecimal getBestBid() {
-        lock.readLock().lock();
-        try {
-            Order bestBuy = buyOrders.peek();
-            return bestBuy != null ? bestBuy.getPrice() : BigDecimal.ZERO;
-        } finally {
-            lock.readLock().unlock();
-        }
+        Order bestBuy = buyOrders.peek();
+        return bestBuy != null ? bestBuy.getPrice() : BigDecimal.ZERO;
     }
     
     @Override
     public BigDecimal getBestAsk() {
-        lock.readLock().lock();
-        try {
-            Order bestSell = sellOrders.peek();
-            return bestSell != null ? bestSell.getPrice() : BigDecimal.ZERO;
-        } finally {
-            lock.readLock().unlock();
-        }
+        Order bestSell = sellOrders.peek();
+        return bestSell != null ? bestSell.getPrice() : BigDecimal.ZERO;
     }
     
     @Override
     public Order getNextBuyOrder() {
-        lock.readLock().lock();
-        try {
-            return buyOrders.peek();
-        } finally {
-            lock.readLock().unlock();
-        }
+        return buyOrders.peek();
     }
     
     @Override
     public Order getNextSellOrder() {
-        lock.readLock().lock();
-        try {
-            return sellOrders.peek();
-        } finally {
-            lock.readLock().unlock();
-        }
+        return sellOrders.peek();
     }
     
     @Override
     public boolean hasMatchingOrders() {
-        lock.readLock().lock();
-        try {
-            Order bestBuy = buyOrders.peek();
-            Order bestSell = sellOrders.peek();
-            
-            return bestBuy != null && bestSell != null && 
-                    bestBuy.getPrice().compareTo(bestSell.getPrice()) >= 0;
-        } finally {
-            lock.readLock().unlock();
-        }
+        Order bestBuy = buyOrders.peek();
+        Order bestSell = sellOrders.peek();
+        
+        return bestBuy != null && bestSell != null && 
+                bestBuy.getPrice().compareTo(bestSell.getPrice()) >= 0;
     }
     
     @Override
     public int getTotalOrders() {
-        lock.readLock().lock();
-        try {
-            return buyOrders.size() + sellOrders.size();
-        } finally {
-            lock.readLock().unlock();
-        }
+        return buyOrders.size() + sellOrders.size() + 
+               stopLossOrders.size() + takeProfitOrders.size();
     }
     
     @Override
     public String getSymbol() {
         return symbol;
+    }
+
+    public void checkStopLossAndTakeProfit(BigDecimal currentPrice) {
+        // Check stop-loss orders
+        while (!stopLossOrders.isEmpty()) {
+            Order order = stopLossOrders.peek();
+            if (order.isStopLossTriggered(currentPrice)) {
+                stopLossOrders.poll();
+                if (order.getSide() == OrderSide.BUY) {
+                    buyOrders.add(order);
+                } else {
+                    sellOrders.add(order);
+                }
+            } else {
+                break;
+            }
+        }
+
+        // Check take-profit orders
+        while (!takeProfitOrders.isEmpty()) {
+            Order order = takeProfitOrders.peek();
+            if (order.isTakeProfitTriggered(currentPrice)) {
+                takeProfitOrders.poll();
+                if (order.getSide() == OrderSide.BUY) {
+                    buyOrders.add(order);
+                } else {
+                    sellOrders.add(order);
+                }
+            } else {
+                break;
+            }
+        }
     }
 } 
